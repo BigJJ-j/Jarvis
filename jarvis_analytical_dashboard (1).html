@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS MARK-XI Tactical Dashboard</title>
+  
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- TensorFlow.js & COCO-SSD for Real-Time Vision -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #030811;
+      --panel-bg: rgba(6, 20, 38, 0.85);
+      --panel-border: rgba(0, 229, 255, 0.35);
+      --cyan-glow: #00e5ff;
+      --cyan-bright: #80f3ff;
+      --amber-alert: #ffb703;
+      --red-alert: #ff0055;
+      --text-main: #d0f4ff;
+      --text-muted: #5f8ba3;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 50%, rgba(0, 229, 255, 0.06) 0%, transparent 70%),
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 30px 30px, 30px 30px;
+    }
+
+    /* Top HUD Header */
+    header {
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(3, 12, 24, 0.95);
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.2);
+      backdrop-filter: blur(10px);
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .arc-reactor {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 2px solid var(--cyan-glow);
+      box-shadow: 0 0 15px var(--cyan-glow), inset 0 0 15px var(--cyan-glow);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      animation: rotateReactor 8s linear infinite;
+    }
+
+    .arc-reactor-inner {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--cyan-bright);
+      box-shadow: 0 0 12px var(--cyan-bright);
+    }
+
+    @keyframes rotateReactor {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .title-group h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 0 10px var(--cyan-glow);
+    }
+
+    .title-group p {
+      font-size: 0.72rem;
+      color: var(--cyan-glow);
+      letter-spacing: 1px;
+    }
+
+    .system-status {
+      display: flex;
+      gap: 25px;
+      font-size: 0.8rem;
+    }
+
+    .status-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .status-val {
+      color: var(--cyan-glow);
+      font-weight: bold;
+    }
+
+    /* Main Grid Layout */
+    .hud-container {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 20px;
+      padding: 20px;
+      flex: 1;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 1024px) {
+      .hud-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      backdrop-filter: blur(6px);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+    }
+
+    .panel-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.95rem;
+      color: var(--cyan-glow);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: 1px;
+    }
+
+    /* Viewport & Camera Overlays */
+    .viewport-box {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--cyan-glow);
+      box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.2);
+    }
+
+    #webcam, #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #overlayCanvas {
+      z-index: 2;
+    }
+
+    .cam-placeholder {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    /* Quick Action Buttons */
+    .action-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    @media (max-width: 640px) {
+      .action-bar {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .hud-btn {
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid var(--cyan-glow);
+      color: var(--cyan-glow);
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .hud-btn:hover {
+      background: var(--cyan-glow);
+      color: var(--bg-dark);
+      box-shadow: 0 0 15px var(--cyan-glow);
+    }
+
+    .hud-btn.active {
+      background: var(--cyan-glow);
+      color: var(--bg-dark);
+    }
+
+    /* Terminal Console */
+    .terminal-output {
+      flex: 1;
+      background: rgba(0, 5, 12, 0.85);
+      border: 1px solid rgba(0, 229, 255, 0.15);
+      border-radius: 6px;
+      padding: 15px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      overflow-y: auto;
+      max-height: 280px;
+      min-height: 200px;
+      margin-bottom: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .log-entry {
+      border-left: 2px solid var(--cyan-glow);
+      padding-left: 10px;
+    }
+
+    .log-entry.jarvis {
+      border-color: var(--cyan-glow);
+      color: var(--text-main);
+    }
+
+    .log-entry.user {
+      border-color: var(--amber-alert);
+      color: #ffe89e;
+    }
+
+    .log-entry.health {
+      border-color: var(--red-alert);
+      color: #ff99bb;
+    }
+
+    .log-speaker {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+      color: var(--cyan-glow);
+      margin-bottom: 2px;
+    }
+
+    /* Input Bar */
+    .input-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    .hud-input {
+      flex: 1;
+      background: rgba(0, 15, 30, 0.8);
+      border: 1px solid var(--panel-border);
+      color: #fff;
+      padding: 12px 15px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .hud-input:focus {
+      border-color: var(--cyan-glow);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+    }
+
+    .mic-btn {
+      width: 45px;
+      background: rgba(255, 0, 85, 0.15);
+      border: 1px solid var(--red-alert);
+      color: var(--red-alert);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: all 0.2s ease;
+    }
+
+    .mic-btn.listening {
+      background: var(--red-alert);
+      color: #fff;
+      animation: pulseMic 1.2s infinite;
+    }
+
+    @keyframes pulseMic {
+      0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.7); }
+      70% { box-shadow: 0 0 0 12px rgba(255, 0, 85, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); }
+    }
+
+    /* Vitals & Telemetry Grid */
+    .vitals-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .vital-card {
+      background: rgba(0, 20, 40, 0.6);
+      border: 1px solid rgba(0, 229, 255, 0.15);
+      padding: 10px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .vital-title {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .vital-val {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1rem;
+      color: var(--cyan-bright);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top HUD Header -->
+  <header>
+    <div class="brand">
+      <div class="arc-reactor">
+        <div class="arc-reactor-inner"></div>
+      </div>
+      <div class="title-group">
+        <h1>J.A.R.V.I.S. MARK-XI</h1>
+        <p>TACTICAL KNOWLEDGE &amp; VISION HUD</p>
+      </div>
+    </div>
+    <div class="system-status">
+      <div class="status-item">
+        <span class="vital-title">GPS SPEED</span>
+        <span class="status-val" id="speedVal">0.0 MPH</span>
+      </div>
+      <div class="status-item">
+        <span class="vital-title">VISION MATRIX</span>
+        <span class="status-val" id="visionStatus">STANDBY</span>
+      </div>
+      <div class="status-item">
+        <span class="vital-title">VOICE CORE</span>
+        <span class="status-val" id="speechStatus">ACTIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid Layout -->
+  <div class="hud-container">
+    
+    <!-- Left Column: Camera Viewport & Recognition Matrix -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <i class="fa-solid fa-eye"></i> OPTICAL FEED &amp; RECOGNITION MATRIX
+        </div>
+        <span class="vital-title" id="fpsCounter">FPS: 0</span>
+      </div>
+
+      <div class="viewport-box">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="overlayCanvas"></canvas>
+        <div class="cam-placeholder" id="camPlaceholder">
+          <i class="fa-solid fa-camera fa-2x" style="margin-bottom: 10px;"></i>
+          <p>CAMERA FEED OFFLINE</p>
+          <p style="font-size: 0.7rem; margin-top: 5px;">Click "ENABLE CAMERA" below to activate vision.</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="action-bar">
+        <button class="hud-btn" id="camBtn" onclick="toggleCamera()">
+          <i class="fa-solid fa-video"></i> ENABLE CAMERA
+        </button>
+        <button class="hud-btn" onclick="askHealthCheck('hydration')">
+          <i class="fa-solid fa-glass-water"></i> HYDRATION
+        </button>
+        <button class="hud-btn" onclick="askHealthCheck('posture')">
+          <i class="fa-solid fa-user-doctor"></i> POSTURE
+        </button>
+        <button class="hud-btn" onclick="askHealthCheck('fatigue')">
+          <i class="fa-solid fa-brain"></i> FATIGUE
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Column: Telemetry, AI Logic & Speech Terminal -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <i class="fa-solid fa-microchip"></i> REASONING &amp; VITALS ENGINE
+        </div>
+        <span class="vital-title" style="color: var(--cyan-glow);">JARVIS v11.0</span>
+      </div>
+
+      <!-- Vitals & Telemetry Cards -->
+      <div class="vitals-grid">
+        <div class="vital-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="vital-title">Velocity Tracking</span>
+            <span style="font-size: 0.6rem; color: var(--cyan-glow);" id="gpsModeLabel">GPS READY</span>
+          </div>
+          <span class="vital-val" id="speedCardVal">0.0 MPH</span>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <input type="range" id="speedSimulator" min="0" max="120" value="0" style="flex: 1; accent-color: var(--cyan-glow); cursor: pointer;" oninput="updateSimulatedSpeed(this.value)">
+            <span style="font-size: 0.65rem; color: var(--text-muted);" id="simLabel">TEST</span>
+          </div>
+        </div>
+        <div class="vital-card">
+          <span class="vital-title">Hydration Level</span>
+          <span class="vital-val" id="hydrationVal">OPTIMAL</span>
+        </div>
+        <div class="vital-card">
+          <span class="vital-title">Posture Index</span>
+          <span class="vital-val" id="postureVal">CHECK NEEDED</span>
+        </div>
+        <div class="vital-card">
+          <span class="vital-title">Objects Tracked</span>
+          <span class="vital-val" id="objectsVal">0 DETECTED</span>
+        </div>
+      </div>
+
+      <!-- Terminal Output -->
+      <div class="terminal-output" id="terminal">
+        <div class="log-entry jarvis">
+          <div class="log-speaker">JARVIS</div>
+          All systems nominal, sir. Camera vision, equation solver, velocity telemetry, and health check-ins are active. How may I assist you?
+        </div>
+      </div>
+
+      <!-- Query Bar -->
+      <div class="input-group">
+        <input type="text" id="userInput" class="hud-input" placeholder="Ask a question, request advice, or input an equation..." onkeydown="if(event.key==='Enter') processQuery()">
+        <button class="hud-btn" onclick="processQuery()">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+        <button class="mic-btn" id="micBtn" onclick="toggleListening()" title="Toggle Speech Listening">
+          <i class="fa-solid fa-microphone"></i>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Core Application State
+    let isCameraOn = false;
+    let videoElement = document.getElementById('webcam');
+    let canvasElement = document.getElementById('overlayCanvas');
+    let ctx = canvasElement.getContext('2d');
+    let cocoModel = null;
+    let isListening = false;
+    let recognition = null;
+    let synth = window.speechSynthesis;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentMph = "0.0";
+    let isManualSim = false;
+
+    // Initialize System Logic
+    window.addEventListener('load', async () => {
+      logTerminal("Initializing JARVIS MARK-XI core subroutines...", "jarvis");
+      initSpeechRecognition();
+      initGPS();
+      
+      try {
+        cocoModel = await cocoSsd.load();
+        document.getElementById('visionStatus').innerText = "READY";
+        document.getElementById('visionStatus').style.color = "var(--cyan-bright)";
+        logTerminal("Neural vision models loaded and ready.", "jarvis");
+      } catch (e) {
+        document.getElementById('visionStatus').innerText = "LIMITED";
+        logTerminal("Vision model loading delayed. Running on basic telemetry.", "health");
+      }
+    });
+
+    // Logging Utility
+    function logTerminal(message, speaker = "jarvis") {
+      const terminal = document.getElementById('terminal');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${speaker}`;
+      
+      const title = document.createElement('div');
+      title.className = 'log-speaker';
+      title.innerText = speaker.toUpperCase();
+      
+      const text = document.createElement('div');
+      text.innerText = message;
+      
+      entry.appendChild(title);
+      entry.appendChild(text);
+      terminal.appendChild(entry);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    // Web Speech Synthesis (JARVIS Voice Profile)
+    function speak(text) {
+      if (!synth) return;
+      synth.cancel(); // Stop current speaking
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = synth.getVoices();
+      
+      // Select British English voice
+      const jarvisVoice = voices.find(v => v.lang.includes('en-GB') || v.name.includes('UK') || v.name.includes('Male')) || voices[0];
+      if (jarvisVoice) {
+        utterance.voice = jarvisVoice;
+      }
+      utterance.pitch = 0.88;
+      utterance.rate = 1.02;
+      
+      synth.speak(utterance);
+    }
+
+    // Web Speech Recognition
+    function initSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        logTerminal("Speech recognition API unavailable in this browser.", "health");
+        return;
+      }
+      
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isListening = true;
+        document.getElementById('micBtn').classList.add('listening');
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        document.getElementById('micBtn').classList.remove('listening');
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        document.getElementById('userInput').value = transcript;
+        logTerminal(transcript, "user");
+        processQuery(transcript);
+      };
+    }
+
+    function toggleListening() {
+      if (!recognition) return;
+      if (isListening) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
+    }
+
+    // Geolocation Speedometer (MPH Tracker)
+    function initGPS() {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            if (isManualSim) return; // Respect manual test slider override
+            
+            const mps = position.coords.speed;
+            if (mps !== null && !isNaN(mps) && mps >= 0) {
+              const mph = (mps * 2.23694).toFixed(1);
+              updateSpeedDisplay(mph);
+              document.getElementById('gpsModeLabel').innerText = "GPS LIVE";
+              document.getElementById('gpsModeLabel').style.color = "var(--cyan-glow)";
+            } else {
+              updateSpeedDisplay("0.0");
+              document.getElementById('gpsModeLabel').innerText = "GPS READY";
+              document.getElementById('gpsModeLabel').style.color = "var(--cyan-glow)";
+            }
+          },
+          (err) => {
+            if (!isManualSim) {
+              document.getElementById('gpsModeLabel').innerText = "MANUAL SIM";
+              document.getElementById('gpsModeLabel').style.color = "var(--amber-alert)";
+            }
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      } else {
+        document.getElementById('gpsModeLabel').innerText = "MANUAL SIM";
+      }
+    }
+
+    function updateSimulatedSpeed(val) {
+      isManualSim = true;
+      const mph = parseFloat(val).toFixed(1);
+      updateSpeedDisplay(mph);
+      document.getElementById('gpsModeLabel').innerText = "MANUAL TEST";
+      document.getElementById('gpsModeLabel').style.color = "var(--amber-alert)";
+    }
+
+    function updateSpeedDisplay(val) {
+      currentMph = val;
+      document.getElementById('speedVal').innerText = `${val} MPH`;
+      document.getElementById('speedCardVal').innerText = `${val} MPH`;
+    }
+
+    // Camera Stream Logic
+    async function toggleCamera() {
+      const btn = document.getElementById('camBtn');
+      const placeholder = document.getElementById('camPlaceholder');
+
+      if (!isCameraOn) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+          });
+          videoElement.srcObject = stream;
+          await videoElement.play();
+          
+          isCameraOn = true;
+          btn.innerHTML = `<i class="fa-solid fa-video-slash"></i> DISABLE CAMERA`;
+          btn.classList.add('active');
+          placeholder.style.display = 'none';
+          logTerminal("Camera optics engaged. Commencing continuous scan.", "jarvis");
+          speak("Visual optics online, sir.");
+          requestAnimationFrame(runDetectionLoop);
+        } catch (err) {
+          logTerminal("Unable to access optical camera feeds.", "health");
+          speak("Unable to access camera feeds.");
+        }
+      } else {
+        const stream = videoElement.srcObject;
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        isCameraOn = false;
+        btn.innerHTML = `<i class="fa-solid fa-video"></i> ENABLE CAMERA`;
+        btn.classList.remove('active');
+        placeholder.style.display = 'block';
+        ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        document.getElementById('fpsCounter').innerText = "FPS: 0";
+        logTerminal("Camera feeds disengaged.", "jarvis");
+      }
+    }
+
+    // Target Vision Analysis Loop
+    async function runDetectionLoop() {
+      if (!isCameraOn) return;
+
+      const now = performance.now();
+      frameCount++;
+      if (now - lastFrameTime >= 1000) {
+        document.getElementById('fpsCounter').innerText = `FPS: ${frameCount}`;
+        frameCount = 0;
+        lastFrameTime = now;
+      }
+
+      canvasElement.width = videoElement.clientWidth;
+      canvasElement.height = videoElement.clientHeight;
+
+      if (cocoModel && videoElement.readyState === 4) {
+        try {
+          const predictions = await cocoModel.detect(videoElement);
+          drawHUDOverlays(predictions);
+          document.getElementById('objectsVal').innerText = `${predictions.length} DETECTED`;
+        } catch (e) {
+          console.error("Detection loop error:", e);
+        }
+      }
+
+      requestAnimationFrame(runDetectionLoop);
+    }
+
+    // Draw Target Reticles
+    function drawHUDOverlays(predictions) {
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      predictions.forEach(prediction => {
+        const [x, y, width, height] = prediction.bbox;
+        const scaleX = canvasElement.width / videoElement.videoWidth;
+        const scaleY = canvasElement.height / videoElement.videoHeight;
+
+        const renderX = x * scaleX;
+        const renderY = y * scaleY;
+        const renderW = width * scaleX;
+        const renderH = height * scaleY;
+
+        const centerX = renderX + renderW / 2;
+        const centerY = renderY + renderH / 2;
+
+        // Bounding Frame
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(renderX, renderY, renderW, renderH);
+
+        // Center Crosshair Reticle
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 1.5;
+        
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(centerX - 15, centerY);
+        ctx.lineTo(centerX + 15, centerY);
+        ctx.moveTo(centerX, centerY - 15);
+        ctx.lineTo(centerX, centerY + 15);
+        ctx.stroke();
+
+        // Corner Brackets
+        const cornerLen = 12;
+        ctx.strokeStyle = '#80f3ff';
+        ctx.lineWidth = 2.5;
+
+        // Corners
+        ctx.beginPath();
+        ctx.moveTo(renderX, renderY + cornerLen);
+        ctx.lineTo(renderX, renderY);
+        ctx.lineTo(renderX + cornerLen, renderY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(renderX + renderW - cornerLen, renderY);
+        ctx.lineTo(renderX + renderW, renderY);
+        ctx.lineTo(renderX + renderW, renderY + cornerLen);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(renderX, renderY + renderH - cornerLen);
+        ctx.lineTo(renderX, renderY + renderH);
+        ctx.lineTo(renderX + cornerLen, renderY + renderH);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(renderX + renderW - cornerLen, renderY + renderH);
+        ctx.lineTo(renderX + renderW, renderY + renderH);
+        ctx.lineTo(renderX + renderW, renderY + renderH - cornerLen);
+        ctx.stroke();
+
+        // Label Tag
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.85)';
+        ctx.fillRect(renderX, renderY - 22, Math.max(renderW, 110), 20);
+
+        ctx.fillStyle = '#030811';
+        ctx.font = 'bold 11px Orbitron';
+        ctx.fillText(`TARGET: ${prediction.class.toUpperCase()} [${Math.round(prediction.score * 100)}%]`, renderX + 5, renderY - 7);
+      });
+    }
+
+    // Process Queries (Math, Speed, Health, General)
+    function processQuery(customQuery = null) {
+      const inputField = document.getElementById('userInput');
+      const query = customQuery || inputField.value.trim();
+      if (!query) return;
+
+      if (!customQuery) {
+        logTerminal(query, "user");
+        inputField.value = '';
+      }
+
+      const lower = query.toLowerCase();
+      let response = "";
+
+      if (lower.includes("speed") || lower.includes("mph") || lower.includes("fast")) {
+        response = `Current telemetry indicates your speed is ${currentMph} MPH.`;
+      }
+      else if (containsMath(lower)) {
+        response = solveMathQuery(lower);
+      }
+      else if (lower.includes("water") || lower.includes("drink") || lower.includes("hydration")) {
+        response = "Hydration levels are critical for focus, sir. I advise drinking 250 milliliters of water.";
+        document.getElementById('hydrationVal').innerText = "OPTIMAL";
+      }
+      else if (lower.includes("posture") || lower.includes("sit") || lower.includes("back")) {
+        response = "Aligning posture parameters: keep your back straight and shoulders relaxed, sir.";
+        document.getElementById('postureVal').innerText = "ALIGNED";
+      }
+      else if (lower.includes("surroundings") || lower.includes("background") || lower.includes("see") || lower.includes("scan")) {
+        const count = document.getElementById('objectsVal').innerText;
+        response = `Optics currently track ${count} in your background environment.`;
+      }
+      else {
+        response = generateGeneralAdvice(lower);
+      }
+
+      logTerminal(response, "jarvis");
+      speak(response);
+    }
+
+    function containsMath(str) {
+      return /[0-9\+\-\*\/\^=]/.test(str) || str.includes("solve") || str.includes("plus") || str.includes("times") || str.includes("divided");
+    }
+
+    function solveMathQuery(str) {
+      try {
+        const cleaned = str.replace(/solve|what is|calculate/gi, '').trim();
+        if (cleaned.includes('=')) {
+          return "For algebraic equations, isolate variables on one side. Apply standard quadratic forms where appropriate.";
+        }
+        const sanitized = cleaned.replace(/[^0-9\+\-\*\/\(\)\.]/g, '');
+        if (sanitized) {
+          const evalResult = eval(sanitized);
+          return `The calculation evaluates to ${evalResult}.`;
+        }
+      } catch (e) {
+        return "I could not resolve that equation. Please check the mathematical syntax, sir.";
+      }
+      return "Expression isolated and solved successfully.";
+    }
+
+    function generateGeneralAdvice(query) {
+      if (query.includes("hello") || query.includes("hi") || query.includes("jarvis")) {
+        return "Greetings, sir. All core systems are active and ready.";
+      }
+      if (query.includes("advice") || query.includes("help") || query.includes("idea")) {
+        return "I suggest structuring your current task into three short focus sprints with brief rest intervals.";
+      }
+      if (query.includes("who are you")) {
+        return "I am JARVIS, your automated tactical computational assistant for math, vision tracking, and vitals monitoring.";
+      }
+      return `Processing input: "${query}". Based on operational logic, I recommend verifying key requirements and proceeding step by step.`;
+    }
+
+    function askHealthCheck(type) {
+      let text = "";
+      if (type === 'hydration') {
+        text = "Sir, when did you last drink water? Hydration maintains high processing efficiency.";
+      } else if (type === 'posture') {
+        text = "Initiating posture check. Please ensure your spine is straight and screen level is optimal.";
+      } else if (type === 'fatigue') {
+        text = "How are your current fatigue levels? I recommend a 5-minute eye rest if required.";
+      }
+      logTerminal(text, "jarvis");
+      speak(text);
+    }
+  </script>
+</body>
+</html>
